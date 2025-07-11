@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>JobGenius</title>
+  <style>
+  body {
+    margin: 0;
+    font-family: 'Segoe UI', sans-serif;
+    background: radial-gradient(circle at 20% 20%, #222, #000);
+    color: white;
+    min-height: 100vh;
+    animation: backgroundPulse 10s ease infinite;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+  }
+
+  @keyframes backgroundPulse {
+    0%, 100% {
+      background: radial-gradient(circle at 20% 20%, #222, #000);
+    }
+    50% {
+      background: radial-gradient(circle at 80% 80%, #444, #111);
+    }
+  }
+</style>
+
+  <link rel="stylesheet" href="/static/styles.css" />
+  <script src="/static/scripts.js" defer></script>
+  <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;600&display=swap" rel="stylesheet" />
+</head>
+<body>
+  <div class="container">
+    <header>
+      <h1>JobGenius</h1>
+      <p>Your Smart AI-Powered Job Assistant</p>
+    </header>
+
+    <!-- Module 1: Upload Resume -->
+    <section>
+      <h2>📄 Upload Resume (PDF)</h2>
+      <form id="resumeForm" enctype="multipart/form-data">
+        <input type="file" name="file" id="resumeFile" accept=".pdf" required />
+        <button type="submit">Upload Resume</button>
+      </form>
+      <pre id="resumeOutput"></pre>
+    </section>
+
+    <!-- Module 2: Match Jobs with Resume -->
+    <section>
+      <h2>🔍 Match Resume with Job Description</h2>
+      <form id="matchForm">
+        <textarea id="jobDescription" rows="6" placeholder="Paste job description here..." required></textarea>
+        <button type="submit">Find Match</button>
+      </form>
+      <pre id="matchOutput"></pre>
+    </section>
+
+    <!-- Module 3: Search Jobs Across Web -->
+    <section>
+      <h2>🌐 Search Jobs Online</h2>
+      <form id="jobSearchForm">
+        <input id="jobTitle" type="text" placeholder="Job Title" />
+        <input id="experience" type="number" placeholder="Experience (years)" />
+        <input id="location" type="text" placeholder="Location" />
+        <input id="graduationYear" type="number" placeholder="Graduation Year" />
+        <button type="submit">Search Jobs</button>
+      </form>
+      <pre id="searchOutput"></pre>
+    </section>
+  </div>
+</body>
+</html>

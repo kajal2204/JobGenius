@@ -1,0 +1,157 @@
+from fastapi import FastAPI, UploadFile, File, Form
+from app.resume_parser import parse_resume
+from app.job_matcher import match_jobs
+import os, shutil, requests, random
+from urllib.parse import urlparse
+from dotenv import load_dotenv
+
+load_dotenv()
+
+app = FastAPI()
+UPLOAD_DIR = "resumes"
+os.makedirs(UPLOAD_DIR, exist_ok=True)
+
+parsed_resume_data = {"text": "", "skills": []}
+
+
+# ---------- Module 1: Upload Resume ----------
+@app.post("/upload-resume/")
+async def upload_resume(file: UploadFile = File(...)):
+    file_path = os.path.join(UPLOAD_DIR, file.filename)
+    with open(file_path, "wb") as f:
+        shutil.copyfileobj(file.file, f)
+
+    result = parse_resume(file_path)
+    parsed_resume_data["text"] = result.get("text", "")
+    parsed_resume_data["skills"] = result.get("skills", [])
+    return {"message": "Resume parsed successfully", "summary": result}
+
+
+# ---------- Module 2: Match Jobs Manually ----------
+@app.post("/match-jobs/")
+async def match_jobs_endpoint(job_descriptions: list[str] = Form(...)):
+    resume_text = parsed_resume_data.get("text", "")
+    if not resume_text:
+        return {"error": "No resume uploaded yet."}
+
+    if isinstance(job_descriptions, list) and len(job_descriptions) == 1:
+        job_descriptions = [j.strip() for j in job_descriptions[0].split(",") if j.strip()]
+
+    matches = match_jobs(resume_text, job_descriptions)
+    return {"matches": matches}
+
+
+# ---------- Module 3: Search Jobs Across the Web ----------
+@app.post("/search-web-jobs/")
+async def search_web_jobs(
+    experience: str = Form(...),
+    location: str = Form("(not specified)"),
+    graduation_year: str = Form(...),
+    job_title: str = Form(None)
+):
+    api_key = os.getenv("SERPAPI_KEY")
+    if not api_key:
+        return {"error": "Missing SERPAPI_KEY in environment."}
+
+    skills = parsed_resume_data.get("skills", [])
+    if not skills:
+        return {"error": "No skills extracted from resume. Upload resume first."}
+
+    all_skills = skills[:]
+    random.shuffle(all_skills)
+    selected_skills = all_skills[:7]  # Limit to 7 to avoid overly long query
+
+    cleaned_title = job_title.strip() if job_title else ""
+    query_base = f"{cleaned_title} {experience} years job {location} {' '.join(selected_skills)} graduation year {graduation_year} hiring OR careers OR job opening".strip()
+
+    site_groups = [
+        ["naukri.com", "glassdoor.com", "unstop.com"],
+        ["thejobcompany.in", "developers.turing.com"],
+        ["careers.google.com", "careers.microsoft.com", "careers.infosys.com", "tcs.com", "capgemini.com", "amazon.jobs"],
+        ["linkedin.com"]
+    ]
+
+    jobs = []
+    seen = set()
+    domain_priority = {
+        "careers.google.com": 0,
+        "careers.microsoft.com": 0,
+        "careers.infosys.com": 0,
+        "tcs.com": 0,
+        "capgemini.com": 0,
+        "amazon.jobs": 0,
+        "naukri.com": 1,
+        "glassdoor.com": 1,
+        "unstop.com": 1,
+        "thejobcompany.in": 2,
+        "developers.turing.com": 2,
+        "linkedin.com": 3
+    }
+
+    for sites in site_groups:
+        site_filter = " OR ".join(f"site:{d}" for d in sites)
+        query = f"{query_base} {site_filter}"
+
+        for start in [0, 100]:
+            params = {
+                "engine": "google",
+                "q": query,
+                "api_key": api_key,
+                "num": 100,
+                "start": start
+            }
+
+            try:
+                resp = requests.get("https://serpapi.com/search", params=params, timeout=15)
+                data = resp.json()
+
+                if "organic_results" not in data:
+                    print(f"🔍 No organic_results from SerpAPI. Query: {query}")
+                    continue
+
+                for item in data.get("organic_results", []):
+                    link = item.get("link")
+                    title = item.get("title", "Untitled Job Post").strip()
+                    snippet = item.get("snippet", "").lower()
+                    if not link or link in seen:
+                        continue
+
+                    domain = urlparse(link).netloc.replace("www.", "")
+
+                    # Skip irrelevant LinkedIn pages
+                    if "linkedin.com" in domain:
+                        if (
+                            "linkedin.com/in/" in link or
+                            "/directory/" in link or
+                            "/articles/" in link or
+                            not (
+                                "/jobs/" in link or "/posts/" in link or any(kw in snippet for kw in [
+                                    "we're hiring", "apply now", "join our team", "open position", "job alert", "recruiting"
+                                ])
+                            )
+                        ):
+                            continue
+
+                    if any(domain.endswith(d) for d in sites):
+                        jobs.append({
+                            "title": title,
+                            "source": domain,
+                            "url": link
+                        })
+                        seen.add(link)
+
+            except Exception as e:
+                print(f"❌ SerpAPI error for query batch {sites}: {e}")
+                continue
+
+    # Sort jobs: Official company sites > Job boards > LinkedIn
+    jobs.sort(key=lambda j: (domain_priority.get(j["source"], 999), j["source"]))
+
+    return {
+        "job_title": cleaned_title or "(not provided)",
+        "experience": experience,
+        "location": location,
+        "graduation_year": graduation_year,
+        "skills_used": selected_skills,
+        "results": jobs
+    }
